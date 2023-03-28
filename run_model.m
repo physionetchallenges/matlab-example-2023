@@ -10,7 +10,7 @@ function run_model(model_directory,input_directory, output_directory, allow_fail
 % folder for saving your model's outputs.
 
 if nargin==3
-    allow_failures=1;
+    allow_failures=0;
     verbose=2;
 end
 
@@ -89,6 +89,8 @@ if outcome_binary==0
     C{2,1}='Outcome: Good';
 elseif outcome_binary==1
     C{2,1}='Outcome: Poor';
+else
+    C{3,1}='Outcome: NaN';
 end
 
 C{3,1}=sprintf('Outcome probability: %.3f',outcome_probability);
