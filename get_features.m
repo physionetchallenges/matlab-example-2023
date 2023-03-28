@@ -48,8 +48,13 @@ for j=1:num_recordings
 
 end
 
-signal_mean=nanmean(available_signal_data');
-signal_std=nanstd(available_signal_data');
+if ~isempty(available_signal_data)
+    signal_mean=nanmean(available_signal_data');
+    signal_std=nanstd(available_signal_data');
+else
+    signal_mean = zeros(1,num_channels);
+    signal_std = zeros(1,num_channels);
+end
 
 % Compute the power spectral density for the delta, theta, alpha, and beta frequency bands for each channel of the most
 % recent recording.
