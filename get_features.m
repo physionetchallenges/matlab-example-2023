@@ -1,6 +1,9 @@
-function features=get_features(patient_metadata, recording_metadata, recording_data)
+function features=get_features(input_directory,patient_id)
 
-% Extract features from the data
+[patient_metadata,recording_ids]=load_challenge_data(input_directory,patient_id);
+num_recordings=length(recording_ids);
+
+% Extract patient features
 age=get_age(patient_metadata);
 sex=get_sex(patient_metadata);
 rosc=get_rosc(patient_metadata);
@@ -25,76 +28,68 @@ end
 
 patient_features=[age male female other rosc ohca vfib ttm];
 
-%Extract features from the recording data and metadata.
-channels = {'Fp1-F7', 'F7-T3', 'T3-T5', 'T5-O1', 'Fp2-F8', 'F8-T4', 'T4-T6', 'T6-O2', 'Fp1-F3', ...
-                'F3-C3', 'C3-P3', 'P3-O1', 'Fp2-F4', 'F4-C4', 'C4-P4', 'P4-O2', 'Fz-Cz', 'Cz-Pz'};
-num_channels=length(channels);
-num_recordings=length(recording_data);
+%Extract EEG features
+channels = {'F3', 'P3', 'F4', 'P4'};
+group='EEG';
 
-% Compute mean and standard deviation for each channel for each recording.
-available_signal_data=[];
-for j=1:num_recordings
+if num_recordings>0
 
-    signal_data=recording_data(j).recording_data;
-    sampling_frequency=recording_data(j).sampling_frequency;
-    signal_channels=recording_data(j).channels;
+    recording_id=recording_ids{end};
+    recording_location = fullfile(input_directory,patient_id,sprintf('%s_%s',recording_id,group));
 
-    if ~isnan(signal_data)
+    if exist([recording_location '.hea'],'file')>0 & exist([recording_location '.mat'],'file')>0
 
-        signal_data=reorder_recording_channels(signal_data, signal_channels, channels);
-        available_signal_data=[available_signal_data signal_data];
+        [signal_data,sampling_frequency,signal_channels]=load_recording(recording_location);
+        utility_frequency=get_utility_frequency(recording_location);
+
+        [signal_data, ~] = reduce_channels(signal_data, channels, signal_channels);
+
+        [signal_data, sampling_frequency] = preprocess_data(signal_data, sampling_frequency, utility_frequency);
+
+        % Convert to bipolar montage: F3-P3 and F4-P4
+        data(1,:)=signal_data(1,:)-signal_data(2,:);
+        data(2,:)=signal_data(3,:)-signal_data(4,:);
+
+        features_eeg=get_eeg_features(data, sampling_frequency);
+
+    else
+
+        features_eeg=NaN(1,8);
 
     end
 
 end
 
-if ~isempty(available_signal_data)
+% Extract ECG features.
+channels = {'ECG', 'ECGL', 'ECGR', 'ECG1', 'ECG2'};
+group = 'ECG';
 
-    signal_mean=nanmean(available_signal_data');
-    signal_std=nanstd(available_signal_data');
+if num_recordings>0
 
-else
+    recording_id=recording_ids{end};
+    recording_location = fullfile(input_directory,patient_id,sprintf('%s_%s',recording_id,group));
 
-    signal_mean = zeros(1,num_channels);
-    signal_std = zeros(1,num_channels);
-    
-end
+    if exist([recording_location '.hea'],'file')>0 & exist([recording_location '.mat'],'file')>0
 
-% Compute the power spectral density for the delta, theta, alpha, and beta frequency bands for each channel of the most
-% recent recording.
-index=find(~isnan([recording_data.sampling_frequency]),1,'last');
+        [signal_data,sampling_frequency,signal_channels]=load_recording(recording_location);
+        utility_frequency=get_utility_frequency(recording_location);
 
-if ~isnan(index)
+        [signal_data, ~] = reduce_channels(signal_data, channels, signal_channels);
 
-    signal_data=recording_data(index).recording_data;
-    sampling_frequency=recording_data(index).sampling_frequency;
-    signal_channels=recording_data(index).channels;
+        [signal_data, sampling_frequency] = preprocess_data(signal_data, sampling_frequency, utility_frequency);
 
-    reordered_signal_data=reorder_recording_channels(signal_data, signal_channels, channels);
+        features_ecg=get_ecg_features(signal_data, sampling_frequency);
 
-    [psd,f]=pwelch(reordered_signal_data',256,128,1024,sampling_frequency);
-    delta_psd_mean=mean(psd(f>0.5 & f<8,:));
-    theta_psd_mean=mean(psd(f>4 & f<8,:));
-    alpha_psd_mean=mean(psd(f>8 & f<12,:));
-    beta_psd_mean=mean(psd(f>12 & f<30,:));
+    else
 
-    quality_score=recording_metadata.Quality(index);
+        features_ecg=NaN(1,10);
 
-else
-
-    delta_psd_mean=zeros(1,num_channels);
-    theta_psd_mean=zeros(1,num_channels);
-    alpha_psd_mean=zeros(1,num_channels);
-    beta_psd_mean=zeros(1,num_channels);
-
-    quality_score=NaN;
+    end
 
 end
-recording_features=[signal_mean signal_std delta_psd_mean theta_psd_mean ...
-    alpha_psd_mean beta_psd_mean quality_score];
 
-% Combine the features from the patient metadata and the recording data and metadata.
-features=[patient_features recording_features];
+% Combine the features 
+features=[patient_features features_eeg features_ecg];
 
 function age=get_age(patient_metadata)
 
@@ -134,7 +129,7 @@ end
 function vfib=get_vfib(patient_metadata)
 
 patient_metadata=strsplit(patient_metadata,'\n');
-vfib_tmp=patient_metadata(startsWith(patient_metadata,'VFib:'));
+vfib_tmp=patient_metadata(startsWith(patient_metadata,'Shockable '));
 vfib_tmp=strsplit(vfib_tmp{1},':');
 
 if strncmp(strtrim(vfib_tmp{2}),'True',4)
@@ -152,10 +147,28 @@ ttm_tmp=patient_metadata(startsWith(patient_metadata,'TTM:'));
 ttm_tmp=strsplit(ttm_tmp{1},':');
 ttm=str2double(ttm_tmp{2});
 
+function utility_frequency=get_utility_frequency(recording_info)
+
+header_file=strsplit([recording_info '.hea'],'/');
+header_file=header_file{end};
+header=strsplit(fileread([recording_info '.hea']),'\n');
+
+utility_tmp=header(startsWith(header,'#Utility'));
+utility_tmp=strsplit(utility_tmp{1},':');
+utility_frequency=str2double(utility_tmp{2});
+
+function [data, channels] = reduce_channels(data, channels, signal_channels)
+
+channel_order=signal_channels(ismember(signal_channels, channels));
+data=data(ismember(signal_channels, channels),:);
+data=reorder_recording_channels(data, channel_order, channels);
+
 function reordered_signal_data=reorder_recording_channels(signal_data, current_channels, reordered_channels)
 
 if length(current_channels)<length(reordered_channels)
-    current_channels{end+1:length(reordered_channels)}='';
+    for i=length(current_channels)+1:length(reordered_channels)
+        current_channels{i}='';
+    end
 end
 
 if sum(cellfun(@strcmp, reordered_channels, current_channels))~=length(current_channels)
@@ -178,3 +191,121 @@ if sum(cellfun(@strcmp, reordered_channels, current_channels))~=length(current_c
 else
     reordered_signal_data=signal_data;
 end
+
+function [rescaled_data,sampling_frequency,channels]=load_recording(recording_location)
+
+header_file=strsplit([recording_location '.hea'],'/');
+header_file=header_file{end};
+
+header=strsplit(fileread([recording_location '.hea']),'\n');
+
+header(cellfun(@(x) isempty(x),header))=[];
+header(startsWith(header,'#'))=[];
+
+recordings_info=strsplit(header{1},' ');
+record_name=recordings_info{1};
+num_signals=str2double(recordings_info{2});
+sampling_frequency=str2double(recordings_info{3});
+num_samples=str2double(recordings_info{4});
+
+signal_file=cell(1,length(header)-1);
+gain=zeros(1,length(header)-1);
+offset=zeros(1,length(header)-1);
+initial_value=zeros(1,length(header)-1);
+checksum=zeros(1,length(header)-1);
+channels=cell(1,length(header)-1);
+for j=2:length(header)
+
+    header_tmp=strsplit(header{j},' ');
+
+    signal_file{j-1}=header_tmp{1};
+    gain(j-1)=str2double(header_tmp{3});
+    offset(j-1)=str2double(header_tmp{5});
+    initial_value(j-1)=str2double(header_tmp{6});
+    checksum(j-1)=str2double(header_tmp{7});
+    channels{j-1}=header_tmp{9};
+
+end
+
+if ~length(unique(signal_file))==1
+    error('A single signal file was expected for %s',header_file)
+end
+
+% Load the signal file
+load([recording_location '.mat'],'val')
+
+num_channels=length(channels);
+if num_channels~=size(val,1) || num_samples~=size(val,2)
+    error('The header file %s is inconsistent with the dimensions of the signal file',header_file)
+end
+
+for j=1:num_channels
+    if val(j,1)~=initial_value(j)
+        error('The initial value in header file %s is inconsistent with the initial value for the channel',header_file)
+    end
+    
+    if sum(val(j,:))~=checksum(j)
+        error('The checksum in header file %s is inconsistent with the initial value for the channel',header_file)
+    end
+end
+
+rescaled_data=zeros(num_channels,num_samples);
+for j=1:num_channels
+    rescaled_data(j,:)=(val(j,:)-offset(j))/gain(j);
+end
+
+function [data, resampling_frequency]=preprocess_data(data, sampling_frequency, utility_frequency)
+% Define the bandpass frequencies.
+passband = [0.1, 30.0];
+
+% If the utility frequency is between bandpass frequencies, then apply a notch filter.
+if utility_frequency>min(passband) & utility_frequency<max(passband)
+    wo = utility_frequency/(sampling_frequency/2);
+    bw = wo/35;
+    [b,a] = iirnotch(wo,bw);
+    data = filtfilt(b,a,data')';
+end
+
+% Apply a bandpass filter.
+
+[b,a]=butter(4,passband/(sampling_frequency/2));
+data = filtfilt(b,a,data')';
+
+%     % Resample the data.
+if mod(sampling_frequency,2) == 0
+    resampling_frequency = 128;
+else
+    resampling_frequency = 125;
+end
+lcm_tmp = lcm(round(sampling_frequency), round(resampling_frequency));
+up = round(lcm_tmp / sampling_frequency);
+down = round(lcm_tmp / resampling_frequency);
+resampling_frequency = sampling_frequency * up / down;
+data=resample(data',up,down)';
+
+% Scale the data to the interval [-1, 1].
+min_value = min(data(:));
+max_value = max(data(:));
+if min_value ~= max_value
+    data = 2.0 / (max_value - min_value) * (data - 0.5 * (min_value + max_value));
+else
+    data = 0 * data;
+end
+
+function features=get_eeg_features(data, sampling_frequency)
+
+try
+    [psd,f]=pwelch(data',256,128,1024,sampling_frequency);
+    delta_psd_mean=mean(psd(f>0.5 & f<8,:));
+    theta_psd_mean=mean(psd(f>4 & f<8,:));
+    alpha_psd_mean=mean(psd(f>8 & f<12,:));
+    beta_psd_mean=mean(psd(f>12 & f<30,:));
+
+    features=[delta_psd_mean theta_psd_mean alpha_psd_mean beta_psd_mean];
+catch
+    features=NaN(1,8);
+end
+
+function features_ecg=get_ecg_features(data, sampling_frequency)
+
+features_ecg=[mean(data') std(data')];

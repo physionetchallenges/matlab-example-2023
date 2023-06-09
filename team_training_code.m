@@ -39,13 +39,13 @@ for j=1:num_patients
         fprintf('%d/%d \n',j,num_patients)
     end
 
-    % Load data
-    patient_id=patient_ids{j};
-    [patient_metadata,recording_metadata,recording_data]=load_challenge_data(input_directory,patient_id);
-
     % Extract features
-    current_features=get_features(patient_metadata, recording_metadata, recording_data);
+    patient_id=patient_ids{j};
+    current_features=get_features(input_directory,patient_id);
     features(j,:)=current_features;
+
+    % Load data
+    patient_metadata=load_challenge_data(input_directory,patient_id);
 
     % Extract labels
     current_outcome=get_outcome(patient_metadata);

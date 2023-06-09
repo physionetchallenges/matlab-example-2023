@@ -13,10 +13,7 @@
 
 function [outcome_binary, outcome_probability, cpc] = team_testing_code(model,input_directory,patient_id,verbose)
 
-% Load the data
-[patient_metadata, recording_metadata, recording_data] = load_challenge_data(input_directory, patient_id);
-
-features = get_features(patient_metadata, recording_metadata, recording_data);
+features=get_features(input_directory,patient_id);
 
 [outcome_binary, outcome_probability]=model.model_outcome.predict(features);
 outcome_binary=str2double(outcome_binary);
