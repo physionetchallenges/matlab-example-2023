@@ -232,7 +232,7 @@ if ~length(unique(signal_file))==1
 end
 
 % Load the signal file
-load([recording_location '.mat'],'val')
+[val, name, T] = load_mat_v4([recording_location '.mat']);
 
 num_channels=length(channels);
 if num_channels~=size(val,1) || num_samples~=size(val,2)
@@ -259,6 +259,8 @@ function [data, resampling_frequency]=preprocess_data(data, sampling_frequency, 
 passband = [0.1, 30.0];
 
 % If the utility frequency is between bandpass frequencies, then apply a notch filter.
+
+
 if utility_frequency>min(passband) & utility_frequency<max(passband)
     wo = utility_frequency/(sampling_frequency/2);
     bw = wo/35;
@@ -267,11 +269,14 @@ if utility_frequency>min(passband) & utility_frequency<max(passband)
 end
 
 % Apply a bandpass filter.
+warning on verbose
+try
+    [b,a]=butter(4,passband/(sampling_frequency/2));
+    data = filtfilt(b,a,data')';
+end
+warning off
 
-[b,a]=butter(4,passband/(sampling_frequency/2));
-data = filtfilt(b,a,data')';
-
-%     % Resample the data.
+% Resample the data.
 if mod(sampling_frequency,2) == 0
     resampling_frequency = 128;
 else
