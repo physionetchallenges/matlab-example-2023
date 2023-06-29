@@ -10,7 +10,7 @@ function run_model(model_directory,input_directory, output_directory, allow_fail
 % folder for saving your model's outputs.
 
 if nargin==3
-    allow_failures=1;
+    allow_failures=0;
     verbose=2;
 end
 
@@ -51,19 +51,26 @@ for j=1:num_patients
 
     % Make the prediction
 
-    try
-        [outcome_binary, outcome_probability, cpc] = team_testing_code(loaded_model,input_directory,patient_id,verbose); % Teams: Implement this function!
-    catch
-        if allow_failures==1
-            outcome_binary=NaN;
-            outcome_probability=NaN;
-            cpc=NaN;
-            fprintf('%s failed \n',patient_id)
-        else
-            error('%s failed \n',patient_id)
-        end
-    end
+    if allow_failures == 0
 
+        [outcome_binary, outcome_probability, cpc] = team_testing_code(loaded_model,input_directory,patient_id,verbose); % Teams: Implement this function!
+
+    else
+
+        try
+            [outcome_binary, outcome_probability, cpc] = team_testing_code(loaded_model,input_directory,patient_id,verbose); % Teams: Implement this function!
+        catch
+            if allow_failures==1
+                outcome_binary=NaN;
+                outcome_probability=NaN;
+                cpc=NaN;
+                fprintf('%s failed \n',patient_id)
+            else
+                error('%s failed \n',patient_id)
+            end
+        end
+
+    end
 
     % Save the predictions
     

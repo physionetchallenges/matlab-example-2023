@@ -58,6 +58,10 @@ if num_recordings>0
 
     end
 
+else
+
+    features_eeg=NaN(1,8);
+
 end
 
 % Extract ECG features.
@@ -85,6 +89,10 @@ if num_recordings>0
         features_ecg=NaN(1,10);
 
     end
+
+else
+
+    features_ecg=NaN(1,10);
 
 end
 
