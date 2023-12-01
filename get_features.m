@@ -218,7 +218,8 @@ num_samples=str2double(recordings_info{4});
 
 signal_file=cell(1,length(header)-1);
 gain=zeros(1,length(header)-1);
-offset=zeros(1,length(header)-1);
+baseline=zeros(1,length(header)-1);
+adc_zero=zeros(1,length(header)-1);
 initial_value=zeros(1,length(header)-1);
 checksum=zeros(1,length(header)-1);
 channels=cell(1,length(header)-1);
@@ -227,8 +228,15 @@ for j=2:length(header)
     header_tmp=strsplit(header{j},' ');
 
     signal_file{j-1}=header_tmp{1};
-    gain(j-1)=str2double(header_tmp{3});
-    offset(j-1)=str2double(header_tmp{5});
+    if contains(header_tmp{3}, '(') && contains(header_tmp{3}, '(')
+        tmp=strsplit(header_tmp{3},'(');
+        gain(j-1)=str2double(tmp{1});
+        baseline(j-1)=str2double(strrep(strrep(tmp{2}, '(', ''), ')', ''));
+    else
+        gain(j-1)=str2double(header_tmp{3});
+        baseline(j-1)=0;
+    end
+    adc_zero(j-1)=str2double(header_tmp{5});
     initial_value(j-1)=str2double(header_tmp{6});
     checksum(j-1)=str2double(header_tmp{7});
     channels{j-1}=header_tmp{9};
@@ -252,14 +260,14 @@ for j=1:num_channels
         error('The initial value in header file %s is inconsistent with the initial value for the channel',header_file)
     end
     
-    if sum(val(j,:))~=checksum(j)
+    if calculate_checksum(val(j,:))~=checksum(j)
         error('The checksum in header file %s is inconsistent with the initial value for the channel',header_file)
     end
 end
 
 rescaled_data=zeros(num_channels,num_samples);
 for j=1:num_channels
-    rescaled_data(j,:)=(val(j,:)-offset(j))/gain(j);
+    rescaled_data(j,:)=(val(j,:)-baseline(j)-adc_zero(j))/gain(j);
 end
 
 function [data, resampling_frequency]=preprocess_data(data, sampling_frequency, utility_frequency)
