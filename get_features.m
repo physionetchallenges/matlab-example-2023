@@ -231,7 +231,7 @@ for j=2:length(header)
     if contains(header_tmp{3}, '(') && contains(header_tmp{3}, '(')
         tmp=strsplit(header_tmp{3},'(');
         gain(j-1)=str2double(tmp{1});
-        baseline(j-1)=str2double(strrep(strrep(tmp{2}, '(', ''), ')', ''));
+        baseline(j-1)=str2double(strrep(strrep(strrep(tmp{2}, '(', ''), ')', ''), '/nu', ''));
     else
         gain(j-1)=str2double(header_tmp{3});
         baseline(j-1)=0;
